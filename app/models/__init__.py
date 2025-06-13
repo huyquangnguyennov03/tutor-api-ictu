@@ -12,6 +12,7 @@ from .assignment import Assignment
 from .chapter import Chapter
 from .common_error import CommonError
 from .teacher import Teacher
+from .notification import Notification
 
 __all__ = [
     'Student',
@@ -24,5 +25,6 @@ __all__ = [
     'Assignment',
     'Chapter',
     'CommonError',
-    'Teacher'
+    'Teacher',
+    'Notification'
 ]

@@ -17,9 +17,24 @@ class MLService:
         self.model_path = 'rf_model.pkl'  # Giống file gốc
         self.load_or_train_model()
     
+    def encode_priority(self, priority):
+        """Mã hóa priority"""
+        mapping = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2}
+        return mapping.get(priority, 1)
+
+    def encode_severity(self, severity):
+        """Mã hóa severity"""
+        mapping = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2}
+        return mapping.get(severity, 1)
+
+    def encode_bloomlevel(self, bloomlevel):
+        """Mã hóa bloom level"""
+        mapping = {'Nhớ': 0, 'Hiểu': 1, 'Áp dụng': 2, 'Phân tích': 3, 'Đánh giá': 4, 'Sáng tạo': 5}
+        return mapping.get(bloomlevel, 0)
+    
     def load_training_data(self):
         """
-        Tạo dữ liệu huấn luyện với 250 bản ghi - GIỐNG HỆT FILE GỐC
+        Tạo dữ liệu huấn luyện với 250 bản ghi - CẬP NHẬT 7 ĐẶC TRƯNG
         
         Returns:
             tuple: (X, y) - Features và labels
@@ -31,29 +46,38 @@ class MLService:
         gpa = np.random.uniform(1.5, 4.0, n_samples)
         progressrate = np.random.uniform(10, 100, n_samples)
         bloomscore = np.random.uniform(2, 10, n_samples)
-        num_submissions = np.random.randint(0, 15, n_samples)
-        num_errors = np.random.randint(0, 10, n_samples)
+        count_errors = np.random.randint(0, 10, n_samples)
+        priority = np.random.choice(['LOW', 'MEDIUM', 'HIGH'], n_samples)
+        severity = np.random.choice(['LOW', 'MEDIUM', 'HIGH'], n_samples)
+        bloomlevel = np.random.choice(['Nhớ', 'Hiểu', 'Áp dụng', 'Phân tích', 'Đánh giá', 'Sáng tạo'], n_samples)
         
-        # Tạo nhãn risk
+        # Mã hóa categorical features
+        priority_encoded = [self.encode_priority(p) for p in priority]
+        severity_encoded = [self.encode_severity(s) for s in severity]
+        bloomlevel_encoded = [self.encode_bloomlevel(b) for b in bloomlevel]
+        
+        # Tạo nhãn risk với logic mới
         risk = []
         for i in range(n_samples):
-            if gpa[i] < 2.0 or progressrate[i] < 30 or num_errors[i] > 5:
+            if gpa[i] < 2.0 or progressrate[i] < 30 or count_errors[i] > 5 or severity_encoded[i] == 2:
                 risk.append(1)
-            elif gpa[i] >= 3.5 and progressrate[i] >= 80 and num_errors[i] <= 1:
+            elif gpa[i] >= 3.0 and progressrate[i] >= 70 and count_errors[i] <= 5 and severity_encoded[i] <= 1:
                 risk.append(0)
             else:
-                risk.append(np.random.choice([0, 1], p=[0.6, 0.4]))
+                risk.append(np.random.choice([0, 1], p=[0.8, 0.2]))
         
         data = {
             'gpa': gpa,
             'progressrate': progressrate,
             'bloomscore': bloomscore,
-            'num_submissions': num_submissions,
-            'num_errors': num_errors,
+            'count_errors': count_errors,
+            'priority': priority_encoded,
+            'severity': severity_encoded,
+            'bloomlevel': bloomlevel_encoded,
             'risk': risk
         }
         df = pd.DataFrame(data)
-        X = df[['gpa', 'progressrate', 'bloomscore', 'num_submissions', 'num_errors']]
+        X = df[['gpa', 'progressrate', 'bloomscore', 'count_errors', 'priority', 'severity', 'bloomlevel']]
         y = df['risk']
         return X, y
     
@@ -89,16 +113,18 @@ class MLService:
             with open(self.model_path, 'wb') as f:
                 pickle.dump(self.model, f)
     
-    def predict_risk(self, gpa, progressrate, bloomscore, num_submissions, num_errors):
+    def predict_risk(self, gpa, progressrate, bloomscore, count_errors, priority, severity, bloomlevel):
         """
-        Dự đoán nguy cơ học vụ
+        Dự đoán nguy cơ học vụ với 7 đặc trưng
         
         Args:
             gpa (float): Điểm GPA
             progressrate (float): Tỷ lệ tiến độ
             bloomscore (float): Điểm Bloom
-            num_submissions (int): Số lần nộp bài
-            num_errors (int): Số lỗi
+            count_errors (int): Số lỗi
+            priority (float): Mức độ ưu tiên (đã mã hóa)
+            severity (float): Mức độ nghiêm trọng (đã mã hóa)
+            bloomlevel (int): Mức độ Bloom (đã mã hóa)
             
         Returns:
             int: 0 (an toàn) hoặc 1 (nguy hiểm)
@@ -106,7 +132,7 @@ class MLService:
         if not self.model:
             self.load_or_train_model()
         
-        input_data = np.array([[gpa, progressrate, bloomscore, num_submissions, num_errors]])
+        input_data = np.array([[gpa, progressrate, bloomscore, count_errors, priority, severity, bloomlevel]])
         return self.model.predict(input_data)[0]
     
     def get_model_metrics(self):

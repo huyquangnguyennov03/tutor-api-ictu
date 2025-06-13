@@ -41,6 +41,6 @@ def create_app(config_name='default'):
     # Import models để SQLAlchemy nhận diện
     from app.models import (Student, Course, Progress, Warning, Assignment, 
                            Chapter, CommonError, BloomAssessment, Intervention, 
-                           CourseHistory, Teacher)
+                           CourseHistory, Teacher, Notification)
     
     return app

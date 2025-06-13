@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from openai import OpenAI
 from dotenv import load_dotenv
+from datetime import datetime
 import re
 from flask_auth import get_current_user, require_auth, get_current_user_or_error
 
@@ -162,42 +163,392 @@ class Teacher(db.Model):
     department = db.Column(db.Text, nullable=False)
     subject = db.Column(db.Text, nullable=False)
 
-# Dữ liệu huấn luyện với 250 bản ghi
-def load_training_data():
-    np.random.seed(42)  # Đảm bảo tính tái lập
-    n_samples = 250
+class Notification(db.Model):
+    __tablename__ = 'notification'
+    notificationid = db.Column(db.Integer, primary_key=True)
+    studentid = db.Column(db.Text, db.ForeignKey('student.studentid'), index=True, nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    createddate = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    isread = db.Column(db.Boolean, nullable=False, default=False)
+
+# Hàm mã hóa
+def encode_priority(priority):
+    mapping = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2}
+    return mapping.get(priority, 1)
+
+def encode_severity(severity):
+    mapping = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2}
+    return mapping.get(severity, 1)
+
+def encode_bloomlevel(bloomlevel):
+    mapping = {'Nhớ': 0, 'Hiểu': 1, 'Áp dụng': 2, 'Phân tích': 3, 'Đánh giá': 4, 'Sáng tạo': 5}
+    return mapping.get(bloomlevel, 0)
+
+# Hàm tạo thông báo tùy chỉnh
+def generate_warning_message(student, progressrate, bloomscore, count_errors, priority, severity, bloomlevel, risk):
+    name = student.name
+    gpa = student.totalgpa
+    bloom_levels = ['Nhớ', 'Hiểu', 'Áp dụng', 'Phân tích', 'Đánh giá', 'Sáng tạo']
     
-    # Tạo dữ liệu giả lập
+    # Ưu tiên đánh giá tích cực nếu GPA và tiến độ cao
+    if gpa >= 3.5 and progressrate >= 80 and count_errors <= 5 and severity <= 1:
+        return f"Sinh viên {name} đang học tập tốt (GPA: {gpa}, Tiến độ: {progressrate}%, Lỗi: {count_errors}, Mức Bloom: {bloom_levels[bloomlevel]}). Hãy tiếp tục duy trì!"
+    
+    # Đánh giá nguy cơ cao nếu risk == 1 hoặc GPA thấp
+    if risk == 1 or gpa < 2.0:
+        reasons = []
+        if gpa < 2.0:
+            reasons.append(f"GPA thấp ({gpa})")
+        if progressrate < 30:
+            reasons.append(f"tiến độ học tập chậm ({progressrate}%)")
+        if count_errors > 5:
+            reasons.append(f"nhiều lỗi học thuật ({count_errors})")
+        if severity >= 1.5:  # Ngưỡng severity cao hơn
+            reasons.append("các cảnh báo có mức độ nghiêm trọng cao")
+        if bloomscore < 5:
+            reasons.append(f"điểm Bloom thấp ({bloomscore})")
+        if bloomlevel <= 1:
+            reasons.append(f"mức độ tư duy thấp ({bloom_levels[bloomlevel]})")
+        if priority >= 1.5:
+            reasons.append("các cảnh báo có ưu tiên cao")
+        reasons_str = ", ".join(reasons) if reasons else "một số yếu tố cần cải thiện"
+        return f"Sinh viên {name} có nguy cơ học vụ cao do {reasons_str}. Vui lòng tập trung cải thiện."
+    
+    # Trường hợp trung gian
+    suggestions = []
+    if gpa < 3.0:
+        suggestions.append("nâng cao GPA")
+    if progressrate < 60:
+        suggestions.append("tăng tốc độ học tập")
+    if count_errors >= 3:
+        suggestions.append("giảm số lỗi học thuật")
+    if bloomlevel <= 2:
+        suggestions.append(f"phát triển tư duy ở mức cao hơn ({bloom_levels[bloomlevel]})")
+    if bloomscore < 6:
+        suggestions.append("cải thiện điểm Bloom")
+    suggestions_str = ", ".join(suggestions) or "tiếp tục cải thiện tổng thể"
+    return f"Sinh viên {name} cần {suggestions_str} để đạt kết quả tốt hơn (GPA: {gpa}, Tiến độ: {progressrate}%, Lỗi: {count_errors}, Mức Bloom: {bloom_levels[bloomlevel]})."
+
+# Hàm đề xuất lộ trình học tập
+def generate_learning_path(student, progressrate, bloomscore, count_errors, priority, severity, bloomlevel, risk):
+    name = student.name
+    gpa = student.totalgpa
+    bloom_levels = ['Nhớ', 'Hiểu', 'Áp dụng', 'Phân tích', 'Đánh giá', 'Sáng tạo']
+    recommendations = []
+
+    if risk == 1 or gpa < 2.0:
+        recommendations.append("Tham gia các lớp bổ trợ để cải thiện kiến thức cơ bản.")
+        if gpa < 2.0:
+            recommendations.append("Tập trung nâng cao điểm GPA qua các bài tập và kỳ thi.")
+        if progressrate < 30:
+            recommendations.append("Tăng cường thời gian học tập để cải thiện tiến độ.")
+        if count_errors > 5:
+            recommendations.append("Xem lại các lỗi học thuật và tham gia hướng dẫn khắc phục.")
+        if severity >= 1.5:
+            recommendations.append("Ưu tiên giải quyết các cảnh báo nghiêm trọng.")
+        if bloomscore < 5:
+            recommendations.append("Luyện tập các bài tập Bloom để nâng cao điểm số.")
+        if bloomlevel <= 1:
+            recommendations.append(f"Tập trung phát triển kỹ năng tư duy {bloom_levels[bloomlevel + 1]}.")
+    else:
+        if gpa < 3.0:
+            recommendations.append("Cải thiện GPA bằng cách hoàn thành tốt các bài tập và kỳ thi.")
+        if progressrate < 60:
+            recommendations.append("Tăng tốc độ học tập để đạt tiến độ tốt hơn.")
+        if count_errors >= 3:
+            recommendations.append("Giảm số lỗi học thuật bằng cách kiểm tra kỹ trước khi nộp.")
+        if bloomlevel <= 2:
+            recommendations.append(f"Phát triển kỹ năng tư duy ở mức {bloom_levels[bloomlevel + 1]} hoặc cao hơn.")
+        if not recommendations:
+            recommendations.append(f"Duy trì hiệu suất học tập tốt và thử thách với các bài tập {bloom_levels[min(bloomlevel + 1, 5)]}.")
+
+    return {
+        "studentid": student.studentid,
+        "name": name,
+        "gpa": gpa,
+        "progressrate": progressrate,
+        "bloomscore": bloomscore,
+        "count_errors": count_errors,
+        "priority": priority,
+        "severity": severity,
+        "bloomlevel": bloom_levels[bloomlevel],
+        "risk": int(risk),
+        "recommendations": recommendations
+    }
+
+# Endpoint create-warning
+@app.route('/api/dashboard/create-warning/<string:studentid>', methods=['POST'])
+def create_warning(studentid):
+    start_time = datetime.now()
+    logger.info(f"Bắt đầu tạo thông báo cho studentid: {studentid}")
+    
+    try:
+        # Kiểm tra studentid hợp lệ
+        if not studentid or not isinstance(studentid, str):
+            logger.error("ID sinh viên không hợp lệ")
+            return jsonify({'error': 'ID sinh viên không hợp lệ'}), 400
+        
+        # Kiểm tra sinh viên tồn tại
+        student = Student.query.get(studentid)
+        if not student:
+            logger.warning(f"Không tìm thấy sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy sinh viên'}), 404
+        
+        # Kiểm tra tiến độ
+        progress = Progress.query.filter_by(studentid=studentid).first()
+        if not progress:
+            logger.warning(f"Không tìm thấy dữ liệu tiến độ cho sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy dữ liệu tiến độ'}), 404
+        
+        # Kiểm tra đánh giá Bloom
+        bloom = BloomAssessment.query.filter_by(studentid=studentid).first()
+        if not bloom:
+            logger.warning(f"Không tìm thấy đánh giá Bloom cho sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy đánh giá Bloom'}), 404
+        
+        # Đếm tổng số lỗi và lấy priority, severity
+        warnings = Warning.query.filter_by(studentid=studentid).all()
+        count_errors = len(warnings)
+        priority = sum([encode_priority(w.priority) for w in warnings]) / len(warnings) if warnings else encode_priority('LOW')
+        severity = sum([encode_severity(w.severity) for w in warnings]) / len(warnings) if warnings else encode_severity('LOW')
+        bloomlevel = encode_bloomlevel(bloom.bloomlevel)
+        
+        # Tải mô hình Random Forest
+        with open(MODEL_PATH, 'rb') as f:
+            rf_model = pickle.load(f)
+        
+        # Dự đoán rủi ro
+        input_data = np.array([[student.totalgpa, progress.progressrate, bloom.score, count_errors, priority, severity, bloomlevel]])
+        risk_prediction = rf_model.predict(input_data)[0]
+        
+        # Tạo thông báo tùy chỉnh
+        message = generate_warning_message(
+            student, progress.progressrate, bloom.score, count_errors, 
+            priority, severity, bloomlevel, risk_prediction
+        )
+        
+        # Lưu thông báo vào bảng Notification
+        new_notification = Notification(
+            studentid=studentid,
+            message=message,
+            createddate=datetime.utcnow().date(),
+            isread=False
+        )
+        db.session.add(new_notification)
+        db.session.commit()
+        
+        logger.info(f"Thông báo đã được tạo cho sinh viên {studentid} trong {datetime.now() - start_time}")
+        return jsonify({
+            'message': 'Thông báo đã được tạo cho sinh viên',
+            'notificationid': new_notification.notificationid,
+            'content': message
+        }), 201
+    
+    except Exception as e:
+        logger.error(f"Không thể tạo thông báo: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'Không thể tạo thông báo: {str(e)}'}), 500
+
+# Endpoint learning-path
+@app.route('/api/dashboard/learning-path/<string:studentid>', methods=['GET'])
+def get_learning_path(studentid):
+    start_time = datetime.now()
+    logger.info(f"Bắt đầu xử lý lộ trình học tập cho studentid: {studentid}")
+    
+    # Kiểm tra quyền truy cập
+    user = get_current_user()
+    if not user:
+        logger.error("Unauthorized: Missing user data")
+        return jsonify({'error': 'Unauthorized: Missing user data'}), 401
+    
+    role = user.get('role')
+    user_studentid = user.get('studentId')
+    
+    try:
+        # Kiểm tra studentid hợp lệ
+        if not studentid or not isinstance(studentid, str):
+            logger.error("ID sinh viên không hợp lệ")
+            return jsonify({'error': 'ID sinh viên không hợp lệ'}), 400
+        
+        # Kiểm tra quyền: Sinh viên chỉ xem được dữ liệu của mình
+        if role == 'user' and user_studentid != studentid:
+            logger.error("Unauthorized: Students can only access their own data")
+            return jsonify({'error': 'Unauthorized: Students can only access their own data'}), 403
+        
+        # Kiểm tra sinh viên tồn tại
+        student = Student.query.get(studentid)
+        if not student:
+            logger.warning(f"Không tìm thấy sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy sinh viên'}), 404
+        
+        # Lấy khóa học hiện tại
+        current_course = Course.query.join(
+            Progress, Progress.courseid == Course.courseid
+        ).filter(
+            Progress.studentid == studentid,
+            Course.status == 'ACTIVE'
+        ).first()
+        
+        current_course_data = {
+            'courseid': current_course.courseid,
+            'coursename': current_course.coursename,
+            'credits': current_course.credits,
+            'semester': current_course.semester,
+            'difficulty': current_course.difficulty,
+            'category': current_course.category,
+            'progressrate': Progress.query.filter_by(studentid=studentid, courseid=current_course.courseid).first().progressrate if current_course else 0.0
+        } if current_course else {}
+        
+        # Lấy danh sách khóa học đã hoàn thành
+        completed_courses = CourseHistory.query.filter_by(studentid=studentid).with_entities(CourseHistory.courseid).all()
+        completed_course_ids = [c.courseid for c in completed_courses]
+        
+        # Lấy tất cả khóa học chưa hoàn thành (trừ khóa học hiện tại)
+        all_courses = Course.query.filter(
+            Course.courseid != (current_course.courseid if current_course else None),
+            ~Course.courseid.in_(completed_course_ids)
+        ).all()
+        all_courses_data = [{
+            'courseid': c.courseid,
+            'coursename': c.coursename,
+            'credits': c.credits,
+            'semester': c.semester,
+            'difficulty': c.difficulty,
+            'category': c.category
+        } for c in all_courses]
+        
+        # Lấy dữ liệu tiến độ, Bloom, và cảnh báo
+        progress = Progress.query.filter_by(studentid=studentid).first()
+        bloom = BloomAssessment.query.filter_by(studentid=studentid).first()
+        
+        if not progress:
+            logger.warning(f"Không tìm thấy dữ liệu tiến độ cho sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy dữ liệu tiến độ'}), 404
+        
+        if not bloom:
+            logger.warning(f"Không tìm thấy đánh giá Bloom cho sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy đánh giá Bloom'}), 404
+        
+        # Đếm số lỗi và lấy priority, severity
+        warnings = Warning.query.filter_by(studentid=studentid).all()
+        count_errors = min(len(warnings), 10)  # Giới hạn tối đa 10 lỗi
+        priority = sum([encode_priority(w.priority) for w in warnings]) / len(warnings) if warnings else encode_priority('LOW')
+        severity = sum([encode_severity(w.severity) for w in warnings]) / len(warnings) if warnings else encode_severity('LOW')
+        bloomlevel = encode_bloomlevel(bloom.bloomlevel)
+        
+        # Lấy assignments và errors
+        assignments = Assignment.query.filter_by(courseid=progress.courseid).all() if progress else []
+        errors = CommonError.query.filter_by(courseid=progress.courseid).all() if progress else []
+        
+        # Đếm số lần nộp bài
+        def count_submissions():
+            count = 0
+            for assignment in assignments:
+                if assignment.studentssubmitted:
+                    submitted_students = assignment.studentssubmitted.split(', ')
+                    if student.name in submitted_students:
+                        count += 1
+            return count
+        
+        num_submissions = count_submissions()
+        
+        # Tải mô hình Random Forest
+        with open(MODEL_PATH, 'rb') as f:
+            rf_model = pickle.load(f)
+        
+        # Dự đoán rủi ro với 7 đặc trưng
+        input_data = np.array([[student.totalgpa, progress.progressrate, bloom.score, count_errors, priority, severity, bloomlevel]])
+        logger.info(f"Input data: {input_data}, shape: {input_data.shape}")
+        risk_prediction = rf_model.predict(input_data)[0]
+        
+        # Đề xuất khóa học
+        recommended_courses = []
+        if progress and bloom:
+            if risk_prediction == 1 or student.totalgpa < 2.0:
+                recommended_courses = Course.query.filter(
+                    Course.difficulty == 'BASIC',
+                    Course.courseid != (current_course.courseid if current_course else None),
+                    ~Course.courseid.in_(completed_course_ids)
+                ).limit(2).all()
+            elif bloom.bloomlevel in ['Sáng tạo', 'Đánh giá']:
+                recommended_courses = Course.query.filter(
+                    Course.difficulty == 'ADVANCED',
+                    Course.courseid != (current_course.courseid if current_course else None),
+                    ~Course.courseid.in_(completed_course_ids)
+                ).limit(2).all()
+            else:
+                recommended_courses = Course.query.filter(
+                    Course.difficulty == 'INTERMEDIATE',
+                    Course.courseid != (current_course.courseid if current_course else None),
+                    ~Course.courseid.in_(completed_course_ids)
+                ).limit(2).all()
+        else:
+            recommended_courses = Course.query.filter(
+                Course.difficulty == 'BASIC',
+                ~Course.courseid.in_(completed_course_ids)
+            ).limit(2).all()
+        
+        recommended_courses_data = [{
+            'courseid': c.courseid,
+            'coursename': c.coursename,
+            'credits': c.credits,
+            'semester': c.semester,
+            'difficulty': c.difficulty,
+            'category': c.category
+        } for c in recommended_courses]
+        
+        # Phản hồi
+        response = {
+            'studentid': studentid,
+            'current_course': current_course_data,
+            'recommended_courses': recommended_courses_data,
+            'all_courses': all_courses_data
+        }
+        
+        logger.info(f"Hoàn thành xử lý lộ trình học tập trong {datetime.now() - start_time}")
+        return jsonify(response), 200
+    
+    except Exception as e:
+        logger.error(f"Không thể lấy lộ trình học tập: {str(e)}")
+        return jsonify({'error': f'Không thể lấy lộ trình học tập: {str(e)}'}), 500
+
+# Hàm huấn luyện
+def load_training_data():
+    np.random.seed(42)
+    n_samples = 250
     gpa = np.random.uniform(1.5, 4.0, n_samples)
     progressrate = np.random.uniform(10, 100, n_samples)
     bloomscore = np.random.uniform(2, 10, n_samples)
-    num_submissions = np.random.randint(0, 15, n_samples)
-    num_errors = np.random.randint(0, 10, n_samples)
-    
-    # Tạo nhãn risk
+    count_errors = np.random.randint(0, 10, n_samples)
+    priority = np.random.choice(['LOW', 'MEDIUM', 'HIGH'], n_samples)
+    severity = np.random.choice(['LOW', 'MEDIUM', 'HIGH'], n_samples)
+    bloomlevel = np.random.choice(['Nhớ', 'Hiểu', 'Áp dụng', 'Phân tích', 'Đánh giá', 'Sáng tạo'], n_samples)
+    priority_encoded = [encode_priority(p) for p in priority]
+    severity_encoded = [encode_severity(s) for s in severity]
+    bloomlevel_encoded = [encode_bloomlevel(b) for b in bloomlevel]
     risk = []
     for i in range(n_samples):
-        if gpa[i] < 2.0 or progressrate[i] < 30 or num_errors[i] > 5:
+        if gpa[i] < 2.0 or progressrate[i] < 30 or count_errors[i] > 5 or severity_encoded[i] == 2:
             risk.append(1)
-        elif gpa[i] >= 3.5 and progressrate[i] >= 80 and num_errors[i] <= 1:
+        elif gpa[i] >= 3.0 and progressrate[i] >= 70 and count_errors[i] <= 5 and severity_encoded[i] <= 1:
             risk.append(0)
         else:
-            risk.append(np.random.choice([0, 1], p=[0.6, 0.4]))
-    
+            risk.append(np.random.choice([0, 1], p=[0.8, 0.2]))
     data = {
         'gpa': gpa,
         'progressrate': progressrate,
         'bloomscore': bloomscore,
-        'num_submissions': num_submissions,
-        'num_errors': num_errors,
+        'count_errors': count_errors,
+        'priority': priority_encoded,
+        'severity': severity_encoded,
+        'bloomlevel': bloomlevel_encoded,
         'risk': risk
     }
     df = pd.DataFrame(data)
-    X = df[['gpa', 'progressrate', 'bloomscore', 'num_submissions', 'num_errors']]
+    X = df[['gpa', 'progressrate', 'bloomscore', 'count_errors', 'priority', 'severity', 'bloomlevel']]
     y = df['risk']
     return X, y
 
-# Huấn luyện và đánh giá mô hình
 def train_and_evaluate_model():
     X, y = load_training_data()
     model = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -214,7 +565,6 @@ def train_and_evaluate_model():
     }
     return model, metrics
 
-# Tải hoặc huấn luyện mô hình
 if os.path.exists(MODEL_PATH):
     with open(MODEL_PATH, 'rb') as f:
         rf_model = pickle.load(f)
@@ -224,7 +574,6 @@ else:
         pickle.dump(rf_model, f)
 
 # API Endpoints
-
 @app.route('/api/dashboard/students', methods=['GET'])
 def get_students():
     start_time = datetime.now()
@@ -901,72 +1250,6 @@ def get_student_errors(studentid):
         logger.error(f"Không thể lấy danh sách lỗi: {str(e)}")
         return jsonify({'error': f'Không thể lấy danh sách lỗi: {str(e)}'}), 500
 
-@app.route('/api/dashboard/create-warning/<string:studentid>', methods=['POST'])
-def create_warning(studentid):
-    start_time = datetime.now()
-    logger.info(f"Bắt đầu xử lý tạo cảnh báo cho studentid: {studentid}")
-    user = get_current_user()
-    if not user:
-        logger.error("Unauthorized: Missing user data")
-        return jsonify({'error': 'Unauthorized: Missing user data'}), 401
-    
-    try:
-        if not studentid or not isinstance(studentid, str):
-            logger.error("ID sinh viên không hợp lệ")
-            return jsonify({'error': 'ID sinh viên không hợp lệ'}), 400
-        
-        student = Student.query.get(studentid)
-        if not student:
-            logger.warning(f"Không tìm thấy sinh viên {studentid}")
-            return jsonify({'error': 'Không tìm thấy sinh viên'}), 404
-
-        progress = Progress.query.filter_by(studentid=studentid).first()
-        bloom = BloomAssessment.query.filter_by(studentid=studentid).first()
-        assignments = Assignment.query.filter_by(courseid=progress.courseid).all() if progress else []
-        errors = CommonError.query.filter_by(courseid=progress.courseid).all() if progress else []
-
-        if not progress or not bloom:
-            logger.warning(f"Không tìm thấy dữ liệu tiến độ hoặc Bloom cho sinh viên {studentid}")
-            return jsonify({'error': 'Không tìm thấy dữ liệu tiến độ hoặc Bloom'}), 404
-
-        def count_submissions():
-            count = 0
-            for assignment in assignments:
-                if assignment.studentssubmitted:
-                    submitted_students = assignment.studentssubmitted.split(', ')
-                    if student.name in submitted_students:
-                        count += 1
-            return count
-
-        num_submissions = count_submissions()
-        num_errors = len(errors)
-
-        input_data = np.array([[student.totalgpa, progress.progressrate, bloom.score, num_submissions, num_errors]])
-        risk_prediction = rf_model.predict(input_data)[0]
-
-        if risk_prediction == 1 or student.totalgpa < 2.0:
-            new_warning = Warning(
-                studentid=studentid,
-                class_=student.class_,
-                warningtype='KHẨN CẤP',
-                message=f'Sinh viên {student.name} có nguy cơ học vụ cao (GPA: {student.totalgpa}, Progress: {progress.progressrate}%, Số lần nộp bài: {num_submissions}, Số lỗi: {num_errors})',
-                severity='HIGH',
-                priority='HIGH',
-                createddate=datetime.utcnow().date(),
-                isnotified=True,
-                notificationsentdate=datetime.utcnow().date()
-            )
-            db.session.add(new_warning)
-            db.session.commit()
-            logger.info(f"Cảnh báo đã được tạo cho sinh viên {studentid} trong {datetime.now() - start_time}")
-            return jsonify({'message': 'Cảnh báo đã được tạo và thông báo cho sinh viên', 'warningid': new_warning.warningid}), 201
-
-        logger.info(f"Không tạo cảnh báo, sinh viên {studentid} an toàn trong {datetime.now() - start_time}")
-        return jsonify({'message': 'Không tạo cảnh báo, sinh viên an toàn'}), 200
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Không thể tạo cảnh báo: {str(e)}")
-        return jsonify({'error': f'Không thể tạo cảnh báo: {str(e)}'}), 500
 
 @app.route('/api/dashboard/class-progress/<int:courseid>', methods=['GET'])
 def get_class_progress(courseid):
@@ -1155,130 +1438,6 @@ def get_activity_rate(courseid):
         logger.error(f"Không thể lấy tỷ lệ hoạt động: {str(e)}")
         return jsonify({'error': f'Không thể lấy tỷ lệ hoạt động cho khóa học {courseid}: {str(e)}'}), 500
 
-@app.route('/api/dashboard/learning-path/<string:studentid>', methods=['GET'])
-def get_learning_path(studentid):
-    start_time = datetime.now()
-    logger.info(f"Bắt đầu xử lý lộ trình học tập cho studentid: {studentid}")
-    user = get_current_user()
-    if not user:
-        logger.error("Unauthorized: Missing user data")
-        return jsonify({'error': 'Unauthorized: Missing user data'}), 401
-    
-    role = user.get('role')
-    user_studentid = user.get('studentId')
-    
-    try:
-        if not studentid or not isinstance(studentid, str):
-            logger.error("ID sinh viên không hợp lệ")
-            return jsonify({'error': 'ID sinh viên không hợp lệ'}), 400
-        
-        if role == 'user' and user_studentid != studentid:
-            logger.error("Unauthorized: Students can only access their own data")
-            return jsonify({'error': 'Unauthorized: Students can only access their own data'}), 403
-        
-        student = Student.query.get(studentid)
-        if not student:
-            logger.warning(f"Không tìm thấy sinh viên {studentid}")
-            return jsonify({'error': 'Không tìm thấy sinh viên'}), 404
-
-        current_course = Course.query.select_from(Course).join(
-            Progress, Progress.courseid == Course.courseid
-        ).filter(
-            Progress.studentid == studentid,
-            Course.status == 'ACTIVE'
-        ).first()
-
-        current_course_data = {
-            'courseid': current_course.courseid,
-            'coursename': current_course.coursename,
-            'credits': current_course.credits,
-            'semester': current_course.semester,
-            'difficulty': current_course.difficulty,
-            'category': current_course.category
-        } if current_course else {}
-
-        completed_courses = CourseHistory.query.filter_by(studentid=studentid).with_entities(CourseHistory.courseid).all()
-        completed_course_ids = [c.courseid for c in completed_courses]
-        all_courses = Course.query.filter(
-            Course.courseid != (current_course.courseid if current_course else 0),
-            ~Course.courseid.in_(completed_course_ids)
-        ).all()
-        all_courses_data = [{
-            'courseid': c.courseid,
-            'coursename': c.coursename,
-            'credits': c.credits,
-            'semester': c.semester,
-            'difficulty': c.difficulty,
-            'category': c.category
-        } for c in all_courses]
-
-        progress = Progress.query.filter_by(studentid=studentid).first()
-        bloom = BloomAssessment.query.filter_by(studentid=studentid).first()
-        assignments = Assignment.query.filter_by(courseid=progress.courseid).all() if progress else []
-        errors = CommonError.query.filter_by(courseid=progress.courseid).all() if progress else []
-
-        def count_submissions():
-            count = 0
-            for assignment in assignments:
-                if assignment.studentssubmitted:
-                    submitted_students = assignment.studentssubmitted.split(', ')
-                    if student.name in submitted_students:
-                        count += 1
-            return count
-
-        num_submissions = count_submissions()
-        num_errors = len(errors)
-
-        recommended_courses = []
-        if progress and bloom:
-            input_data = np.array([[student.totalgpa, progress.progressrate, bloom.score, num_submissions, num_errors]])
-            risk_prediction = rf_model.predict(input_data)[0]
-
-            if risk_prediction == 1 or student.totalgpa < 2.0:
-                recommended_courses = Course.query.filter(
-                    Course.difficulty == 'BASIC',
-                    Course.courseid != (current_course.courseid if current_course else 0),
-                    ~Course.courseid.in_(completed_course_ids)
-                ).limit(2).all()
-            elif bloom.bloomlevel in ['Sáng tạo', 'Đánh giá']:
-                recommended_courses = Course.query.filter(
-                    Course.difficulty == 'ADVANCED',
-                    Course.courseid != (current_course.courseid if current_course else 0),
-                    ~Course.courseid.in_(completed_course_ids)
-                ).limit(2).all()
-            else:
-                recommended_courses = Course.query.filter(
-                    Course.difficulty == 'INTERMEDIATE',
-                    Course.courseid != (current_course.courseid if current_course else 0),
-                    ~Course.courseid.in_(completed_course_ids)
-                ).limit(2).all()
-        else:
-            recommended_courses = Course.query.filter(
-                Course.difficulty == 'BASIC',
-                ~Course.courseid.in_(completed_course_ids)
-            ).limit(2).all()
-
-        recommended_courses_data = [{
-            'courseid': c.courseid,
-            'coursename': c.coursename,
-            'credits': c.credits,
-            'semester': c.semester,
-            'difficulty': c.difficulty,
-            'category': c.category
-        } for c in recommended_courses]
-
-        response = {
-            'studentid': studentid,
-            'current_course': current_course_data,
-            'recommended_courses': recommended_courses_data,
-            'all_courses': all_courses_data
-        }
-        logger.info(f"Hoàn thành xử lý lộ trình học tập trong {datetime.now() - start_time}")
-        return jsonify(response)
-    except Exception as e:
-        logger.error(f"Không thể lấy lộ trình học tập: {str(e)}")
-        return jsonify({'error': f'Không thể lấy lộ trình học tập: {str(e)}'}), 500
-
 @app.route('/api/dashboard/evaluate-model', methods=['GET'])
 def evaluate_model():
     start_time = datetime.now()
@@ -1429,6 +1588,118 @@ def evaluate_llm(studentid):
     except Exception as e:
         logger.error(f"Không thể đánh giá LLM: {str(e)}")
         return jsonify({'error': f'Không thể đánh giá LLM: {str(e)}'}), 500
+    
+@app.route('/api/dashboard/extend-deadline/<int:assignmentid>', methods=['POST'])
+@require_auth
+def extend_deadline(assignmentid):
+    start_time = datetime.now()
+    logger.info(f"Bắt đầu xử lý gia hạn deadline cho assignmentid: {assignmentid}")
+    user = get_current_user()
+    if not user:
+        logger.error("Unauthorized: Missing user data")
+        return jsonify({'error': 'Unauthorized: Missing user data'}), 401
+    
+    if user.get('role') != 'admin':
+        logger.error("Unauthorized: Only admins can extend deadlines")
+        return jsonify({'error': 'Unauthorized: Only admins can extend deadlines'}), 403
+    
+    try:
+        data = request.json
+        new_deadline = data.get('new_deadline')  # Định dạng: YYYY-MM-DD
+        if not new_deadline:
+            logger.error("Missing new_deadline in request body")
+            return jsonify({'error': 'Missing new_deadline in request body'}), 400
+
+        # Chuyển đổi new_deadline thành đối tượng datetime.date
+        try:
+            new_deadline_date = datetime.strptime(new_deadline, '%Y-%m-%d').date()
+        except ValueError:
+            logger.error("Invalid date format for new_deadline. Use YYYY-MM-DD")
+            return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+        assignment = Assignment.query.get(assignmentid)
+        if not assignment:
+            logger.warning(f"Không tìm thấy bài tập {assignmentid}")
+            return jsonify({'error': 'Không tìm thấy bài tập'}), 404
+
+        # Kiểm tra nếu deadline mới hợp lệ (ví dụ: không sớm hơn ngày hiện tại)
+        if new_deadline_date < datetime.utcnow().date():
+            logger.error("New deadline cannot be in the past")
+            return jsonify({'error': 'New deadline cannot be in the past'}), 400
+
+        # Cập nhật deadline
+        assignment.deadline = new_deadline_date
+        db.session.commit()
+        
+        logger.info(f"Gia hạn deadline cho bài tập {assignmentid} thành công trong {datetime.now() - start_time}")
+        return jsonify({
+            'message': 'Gia hạn deadline thành công',
+            'assignmentid': assignmentid,
+            'new_deadline': assignment.deadline.isoformat()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Không thể gia hạn deadline: {str(e)}")
+        return jsonify({'error': f'Không thể gia hạn deadline: {str(e)}'}), 500    
+    
+@app.route('/api/dashboard/student-notifications/<string:studentid>', methods=['GET'])
+@require_auth
+def get_student_notifications(studentid):
+    start_time = datetime.now()
+    logger.info(f"Bắt đầu lấy danh sách thông báo cho studentid: {studentid}")
+    user = get_current_user()
+    if not user:
+        logger.error("Unauthorized: Missing user data")
+        return jsonify({'error': 'Unauthorized: Missing user data'}), 401
+    
+    role = user.get('role')
+    user_studentid = user.get('studentId')
+    
+    try:
+        # Kiểm tra studentid hợp lệ
+        if not studentid or not isinstance(studentid, str):
+            logger.error("ID sinh viên không hợp lệ")
+            return jsonify({'error': 'ID sinh viên không hợp lệ'}), 400
+        
+        # Kiểm tra quyền truy cập
+        if role == 'user':
+            if not user_studentid:
+                logger.error("Unauthorized: Missing student ID")
+                return jsonify({'error': 'Unauthorized: Missing student ID'}), 401
+            if user_studentid != studentid:
+                logger.error("Unauthorized: Students can only access their own notifications")
+                return jsonify({'error': 'Unauthorized: Students can only access their own notifications'}), 403
+        
+        # Kiểm tra sinh viên tồn tại
+        student = Student.query.get(studentid)
+        if not student:
+            logger.warning(f"Không tìm thấy sinh viên {studentid}")
+            return jsonify({'error': 'Không tìm thấy sinh viên'}), 404
+        
+        # Lấy danh sách thông báo của sinh viên
+        notifications = Notification.query.filter_by(studentid=studentid).all()
+        
+        # Nếu không có thông báo
+        if not notifications:
+            logger.info(f"Không tìm thấy thông báo cho sinh viên {studentid}")
+            return jsonify({'message': 'Không có thông báo nào cho sinh viên này', 'notifications': []}), 200
+        
+        # Tạo phản hồi
+        response = [{
+            'notificationid': n.notificationid,
+            'studentid': n.studentid,
+            'message': n.message,
+            'createddate': n.createddate.isoformat() if n.createddate else None,
+            'isread': n.isread
+        } for n in notifications]
+        
+        logger.info(f"Hoàn thành lấy danh sách thông báo trong {datetime.now() - start_time}")
+        return jsonify({'notifications': response}), 200
+    
+    except Exception as e:
+        logger.error(f"Không thể lấy danh sách thông báo: {str(e)}")
+        return jsonify({'error': f'Không thể lấy danh sách thông báo: {str(e)}'}), 500
 
 if __name__ == '__main__':
     with app.app_context():

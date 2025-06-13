@@ -4,6 +4,8 @@ QUAN TRỌNG: Trong file gốc, TẤT CẢ endpoints đều bắt đầu bằng 
 Vì vậy tôi sẽ gộp tất cả vào dashboard_bp để giữ nguyên URL
 """
 from .dashboard_complete import dashboard_bp
+from .notification import notification_bp
+from .intervention import intervention_bp
 
 def register_blueprints(app):
     """
@@ -14,3 +16,5 @@ def register_blueprints(app):
         app: Flask application instance
     """
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+    app.register_blueprint(notification_bp)
+    app.register_blueprint(intervention_bp)
