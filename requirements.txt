@@ -14,7 +14,7 @@ psycopg2-binary==2.9.7
 # Machine Learning
 numpy==1.26.4           # cập nhật để hỗ trợ Python 3.10+
 pandas>=2.2.0         # tương thích numpy 1.26
-scikit-learn==1.3.2     # tương thích pandas & numpy mới
+scikit-learn==1.5.0     # tương thích pandas & numpy mới
 
 # OpenAI
 openai==1.3.0
