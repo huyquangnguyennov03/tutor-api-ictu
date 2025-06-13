@@ -30,7 +30,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 
 # Cấu hình kết nối PostgreSQL
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgres://avnadmin:AVNS_46rUrwIxfxg7sZmx7Fw@postgresql-luxstay-phungmanhkien20-23a9.h.aivencloud.com:18405/dashboard?sslmode=require'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DB_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
