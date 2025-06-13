@@ -9,7 +9,7 @@ Flask-SQLAlchemy==3.0.5
 Flask-CORS==4.0.0
 
 # Database
-psycopg[binary]>=3.1.0
+psycopg2-binary>=2.9.9
 
 # Machine Learning
 numpy==1.26.4           # cập nhật để hỗ trợ Python 3.10+
