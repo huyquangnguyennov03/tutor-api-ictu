@@ -11,7 +11,7 @@ class Config:
     """Cấu hình cơ bản cho ứng dụng"""
     
     # Database
-    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:17112003@localhost:5432/tutor_ai_v4'
+    SQLALCHEMY_DATABASE_URI = os.getenv("DB_URL")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # CORS
