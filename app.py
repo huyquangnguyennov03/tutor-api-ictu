@@ -27,7 +27,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = Flask(__name__)
 
 # Cấu hình CORS
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Cấu hình kết nối PostgreSQL
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DB_URL")
