@@ -32,7 +32,7 @@ def fix_duplicate_content(file_path):
 
 def main():
     """Main function"""
-    models_dir = "C:/Users/Huy_Nguyen_Blue/tutor-api-ictu/app/models"
+    models_dir = "/app/models"
     
     # Lấy tất cả file .py trừ __init__.py
     for filename in os.listdir(models_dir):
