@@ -277,7 +277,7 @@ def generate_learning_path(student, progressrate, bloomscore, count_errors, prio
     }
 
 
-@app.route('/api', methods=['GET'])
+@app.route('/api/dashboard/test-message', methods=['GET'])
 def send():
     return jsonify({'success': 'true'}), 200
 
