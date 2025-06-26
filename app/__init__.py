@@ -43,4 +43,10 @@ def create_app(config_name='default'):
                            Chapter, CommonError, BloomAssessment, Intervention, 
                            CourseHistory, Teacher, Notification)
     
+    # Thêm endpoint ping để kiểm tra uptime
+    @app.route('/ping', methods=['GET'])
+    def ping_service():
+        from flask import jsonify
+        return jsonify({'success': 'true'}), 200
+    
     return app
