@@ -277,9 +277,8 @@ def generate_learning_path(student, progressrate, bloomscore, count_errors, prio
     }
 
 
-# Endpoint create-warning
-@app.route('/', methods=['GET'])
-def create_warning(studentid):
+@app.route('/api/dashboard/test-message', methods=['GET'])
+def send():
     return jsonify({'success': 'true'}), 200
 
 # Endpoint create-warning
