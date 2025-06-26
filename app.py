@@ -1707,6 +1707,10 @@ def get_student_notifications(studentid):
         logger.error(f"Không thể lấy danh sách thông báo: {str(e)}")
         return jsonify({'error': f'Không thể lấy danh sách thông báo: {str(e)}'}), 500
 
+@app.route('/ping', methods=['GET'])
+def send():
+    return jsonify({'success': 'true'}), 200
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
